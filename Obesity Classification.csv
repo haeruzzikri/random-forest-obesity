@@ -1,0 +1,109 @@
+age;gender;height;weight;bmi;label
+25;1;175;80;25.3;Normal Weight
+30;2;160;60;22.5;Normal Weight
+35;1;180;90;27.3;Overweight
+40;2;150;50;20;Underweight
+45;1;190;100;31.2;Obese
+50;2;140;40;16.7;Underweight
+55;1;200;110;34.2;Obese
+60;2;130;30;13.3;Underweight
+65;1;210;120;37.2;Obese
+70;2;120;20;10;Underweight
+18;1;175;70;23.4;Normal Weight
+23;2;160;50;20;Underweight
+28;1;180;80;25.3;Normal Weight
+33;2;150;60;22.5;Normal Weight
+38;1;190;90;27.3;Overweight
+43;2;140;50;20;Underweight
+48;1;200;100;31.2;Obese
+53;2;130;40;16.7;Underweight
+58;1;210;110;34.2;Obese
+63;2;120;30;13.3;Underweight
+68;1;175;80;25.3;Normal Weight
+73;2;160;60;22.5;Normal Weight
+78;1;180;90;27.3;Overweight
+83;2;150;50;20;Underweight
+88;1;190;100;31.2;Obese
+93;2;140;40;16.7;Underweight
+98;1;200;110;34.2;Obese
+103;2;130;30;13.3;Underweight
+108;1;210;120;37.2;Obese
+19;1;175;75;24.2;Normal Weight
+24;2;160;55;21.2;Normal Weight
+29;1;180;85;26.1;Overweight
+39;1;190;95;27;Overweight
+44;2;140;75;25;Overweight
+49;1;200;105;28.9;Obese
+54;2;130;85;27.5;Overweight
+59;1;210;115;30.8;Obese
+64;2;120;95;29.1;Overweight
+17;1;175;65;22.7;Normal Weight
+22;2;160;45;18.7;Underweight
+27;1;180;75;24.2;Normal Weight
+32;2;150;55;21.2;Normal Weight
+37;1;190;85;26.1;Overweight
+42;2;140;65;22.7;Normal Weight
+47;1;200;95;27;Overweight
+52;2;130;75;25;Overweight
+57;1;210;105;28.9;Obese
+62;2;120;85;27.5;Overweight
+67;1;175;65;22.7;Normal Weight
+72;2;160;45;18.7;Underweight
+77;1;180;75;24.2;Normal Weight
+82;2;150;55;21.2;Normal Weight
+87;1;190;85;26.1;Overweight
+92;2;140;65;22.7;Normal Weight
+97;1;200;95;27;Overweight
+102;2;130;75;25;Overweight
+107;1;210;105;28.9;Obese
+112;2;120;85;27.5;Overweight
+16;1;175;55;21.2;Normal Weight
+21;2;160;35;16.7;Underweight
+26;1;180;65;22.7;Normal Weight
+31;2;150;45;18.7;Underweight
+36;1;190;75;24.2;Normal Weight
+41;2;140;55;21.2;Normal Weight
+46;1;200;85;26.1;Overweight
+51;2;130;65;22.7;Normal Weight
+56;1;210;95;27;Overweight
+61;2;120;75;25;Overweight
+15;1;175;45;18.7;Underweight
+20;2;160;30;13.3;Underweight
+25;1;180;55;21.2;Normal Weight
+30;2;150;40;16.7;Underweight
+35;1;190;65;22.7;Normal Weight
+40;2;140;50;20;Underweight
+45;1;200;75;24.2;Normal Weight
+50;2;130;60;22.5;Normal Weight
+55;1;210;85;26.1;Overweight
+60;2;120;70;23.4;Normal Weight
+14;1;175;35;16.7;Underweight
+19;2;160;25;10;Underweight
+24;1;180;45;18.7;Underweight
+29;2;150;30;13.3;Underweight
+34;1;190;55;21.2;Normal Weight
+13;1;175;25;10;Underweight
+18;2;160;20;8.3;Underweight
+23;1;180;30;13.3;Underweight
+28;2;150;25;10;Underweight
+33;1;190;40;16.7;Underweight
+38;2;140;35;16.7;Underweight
+43;1;200;50;20;Underweight
+48;2;130;40;16.7;Underweight
+53;1;210;55;21.2;Normal Weight
+58;2;120;35;16.7;Underweight
+12;1;175;15;5.6;Underweight
+17;2;160;15;5.6;Underweight
+22;1;180;20;8.3;Underweight
+27;2;150;20;8.3;Underweight
+32;1;190;25;10;Underweight
+37;2;140;25;10;Underweight
+42;1;200;30;13.3;Underweight
+47;2;130;30;13.3;Underweight
+52;1;210;35;16.7;Underweight
+57;2;120;25;10;Underweight
+11;1;175;10;3.9;Underweight
+16;2;160;10;3.9;Underweight
+21;1;180;15;5.6;Underweight
+26;2;150;15;5.6;Underweight
+31;1;190;20;8.3;Underweight
