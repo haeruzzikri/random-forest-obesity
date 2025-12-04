@@ -6,7 +6,7 @@ from sklearn.preprocessing import LabelEncoder
 from database import create_connection, create_table, save_prediction, load_history
 
 
-st.set_page_config(page_title="Obesity Risk Classifier", layout="wide")
+st.set_page_config(page_title="Prediksi Risko Obesitas Random Forest", layout="wide")
 
 # ============================
 # Load Model + Encoder + Feature List
@@ -160,7 +160,8 @@ menu = st.sidebar.radio(
 # ============================
 if menu == "Prediksi Upload Dataset":
     st.title("Prediksi Obesitas (Upload Dataset)")
-    st.write("Upload file CSV Anda (separator `;`). Pastikan file hanya berisi fitur berikut:")
+    st.write("Upload file CSV Anda (dipisahkan dengan `;`). Pastikan file hanya berisi fitur berikut: age, gender, height, weight, dan bmi")
+    st.write("Pastikan kolom gender pada data anda berisi 1 dan 2, dimana 1 adalah male dan 2 adalah female!")
 
     file = st.file_uploader("Upload CSV disini", type=["csv"])
     if file is not None:
@@ -255,7 +256,7 @@ if menu == "Prediksi Satuan":
                 "Fokus pada makanan tinggi protein dan karbohidrat kompleks.",
                 "Perbanyak frekuensi makan (5–6 kali/hari)."
             ],
-            "Normal": [
+            "Normal Weight": [
                 "Pertahankan pola makan seimbang.",
                 "Lakukan aktivitas fisik minimal 30 menit/hari.",
                 "Monitor berat badan setiap 2 minggu."
