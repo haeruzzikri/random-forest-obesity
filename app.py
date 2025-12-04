@@ -1,5 +1,6 @@
 import streamlit as st
 import pandas as pd
+import io
 import joblib
 from sklearn.preprocessing import LabelEncoder
 from database import create_connection, create_table, save_prediction, load_history
@@ -333,13 +334,32 @@ elif menu == "Riwayat Prediksi":
         "bmi", "probability", "prediction", "recommendation", "timestamp"
     ])
 
-    st.dataframe(df_history, use_container_width=True)
+    df_display = df_history.drop(columns=["riwayat_id", "user_id"])
+    df_display.insert(0, "No", range(1, len(df_display) + 1))
+
+    df_display = df_display.rename(columns={
+        "age": "Age",
+        "gender": "Gender",
+        "height": "Height",
+        "weight": "Weight",
+        "bmi": "BMI",
+        "probability": "Probability",
+        "prediction": "Prediction",
+        "recommendation": "Recommendation",
+        "timestamp": "Waktu Prediksi"
+    })
+    st.dataframe(df_display, use_container_width=True)
+
+    buffer = io.BytesIO()
+    with pd.ExcelWriter(buffer, engine='xlsxwriter') as writer:
+        df_display.to_excel(writer, index=False, sheet_name='Riwayat Prediksi')
 
     st.download_button(
-        "Download CSV",
-        df_history.to_csv(index=False).encode(),
-        "riwayat_prediksi.csv",
-        "text/csv"
+        label="Download Excel",
+        data=buffer.getvalue(),
+        file_name="riwayat_prediksi.xlsx",
+        mime="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet"
     )
+
 
 
