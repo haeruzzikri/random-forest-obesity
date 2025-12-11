@@ -1,366 +1,331 @@
 import streamlit as st
 import pandas as pd
 import io
+import json
 import joblib
-from sklearn.preprocessing import LabelEncoder
-from database import create_connection, create_table, save_prediction, load_history
+from database import create_connection, create_table, save_prediction, load_history, delete_all_history, delete_history_by_id
 
-
-st.set_page_config(page_title="Prediksi Risko Obesitas Random Forest", layout="wide")
-
-# ============================
-# Load Model + Encoder + Feature List
-# ============================
+# =========================================
+# LOAD MODEL + ENCODER + FEATURE LIST
+# =========================================
 model = joblib.load("model_rf.pkl")
-encoders = joblib.load("encoders.pkl")  # dict, e.g. {"gender": LabelEncoder()}
-feature_list = joblib.load("feature_list.pkl")  # e.g. ['age','gender','height','weight','bmi']
+encoders = joblib.load("encoders.pkl")         # dict: includes categorical encoders + 'target'
+feature_list = joblib.load("feature_list.pkl") # urutan fitur sesuai training
+
+target_encoder = encoders["NObeyesdad"]   # FIXED
+
+# =========================================
+# STREAMLIT CONFIG
+# =========================================
+st.set_page_config(page_title="Obesity Risk Classifier", layout="wide")
 
 conn = create_connection()
 create_table(conn)
 
-
-# ============================
-# Helper: normalize gender values to match encoder classes
-# ============================
-def normalize_gender_series(s: pd.Series, encoder):
-    """
-    Normalize typical user inputs to encoder classes.
-    - If encoder.classes_ contain readable gender labels (have letters), map case-insensitive.
-    - If encoder.classes_ are numeric-like (e.g. '1','2'), map 'male'->classes_[0], 'female'->classes_[1]
-      and show a warning to the user about the assumed mapping.
-    """
-    s = s.astype(str).str.strip()
-    # Lowercase for initial normalization
-    s_low = s.str.lower().replace({
-        'male.': 'male', 'female.': 'female'
-    })
-
-    encoder_classes = list(encoder.classes_)
-    encoder_classes_lower = [str(c).lower() for c in encoder_classes]
-
-    # If encoder classes contain alphabetic characters, try to map case-insensitive
-    has_alpha = any(any(ch.isalpha() for ch in str(c)) for c in encoder_classes)
-
-    # mapping function
-    def map_val(v):
-        if pd.isna(v):
-            return v
-        v_l = str(v).lower()
-        if has_alpha:
-            # try direct case-insensitive match to encoder classes
-            if v_l in encoder_classes_lower:
-                return encoder_classes[encoder_classes_lower.index(v_l)]
-            # common synonyms
-            if v_l in ['male', 'm']:
-                for c in encoder_classes:
-                    if str(c).lower().startswith('m'):
-                        return c
-            if v_l in ['female', 'f']:
-                for c in encoder_classes:
-                    if str(c).lower().startswith('f'):
-                        return c
-            # fallback: return original (will be validated later)
-            return v
-        else:
-            # encoder classes are numeric-like (e.g., '1','2') -> assume first=male, second=female
-            # Inform user via warning outside this function
-            if v_l in ['male', 'm']:
-                return encoder_classes[0] if len(encoder_classes) >= 1 else v
-            if v_l in ['female', 'f']:
-                return encoder_classes[1] if len(encoder_classes) >= 2 else v
-            # if user provided a numeric-like value that matches encoder, return it
-            if v in encoder_classes:
-                return v
-            return v
-
-    mapped = s_low.apply(map_val)
-    return mapped
-
-# ============================
-# Preprocessing Function (robust)
-# ============================
-def preprocess(df: pd.DataFrame, show_warnings=False):
+# =========================================
+# NORMALISASI & PREPROCESSING
+# =========================================
+def preprocess(df: pd.DataFrame):
     df = df.copy()
 
-    # Drop label if present
-    if "label" in df.columns:
-        df = df.drop(columns=["label"])
+    required = feature_list[:]     # target tidak ada di feature_list
 
-    # Ensure all required columns exist
-    missing = [c for c in feature_list if c not in df.columns]
-    if missing:
-        raise ValueError(f"Dataset missing required columns: {missing}. "
-                         f"Required columns: {feature_list}")
-
-    # Normalize gender if present and encoder exists
-    if "gender" in df.columns and "gender" in encoders:
-        enc = encoders["gender"]
-        # If encoder classes numeric-like, inform the user about assumed mapping
-        has_alpha = any(any(ch.isalpha() for ch in str(c)) for c in enc.classes_)
-        if not has_alpha and show_warnings:
-            st.warning(
-                "Warning: encoder untuk kolom 'gender' berisi kelas: "
-                f"{list(enc.classes_)}. Aplikasi akan mengasumsikan mapping "
-                f"'male' -> {enc.classes_[0]} dan 'female' -> {enc.classes_[1]}."
-            )
-        df["gender"] = normalize_gender_series(df["gender"], enc)
-
-    # Apply encoders safely (validate unseen labels and give clear message)
-    for col, enc in encoders.items():
+    for col in required:
         if col not in df.columns:
-            raise ValueError(f"Expected column '{col}' not found in input dataframe.")
-        # Check unseen labels
-        unique_vals = set(df[col].astype(str).unique())
-        allowed = set([str(c) for c in enc.classes_])
-        unseen = unique_vals - allowed
-        if unseen:
-            # try case-insensitive match
-            allowed_lower_map = {str(c).lower(): c for c in enc.classes_}
-            replacements = {}
-            for u in list(unseen):
-                if u.lower() in allowed_lower_map:
-                    replacements[u] = allowed_lower_map[u.lower()]
-                    unseen.remove(u)
-            if replacements:
-                df[col] = df[col].astype(str).replace(replacements)
-                unique_vals = set(df[col].astype(str).unique())
-                unseen = unique_vals - allowed
+            raise ValueError(f"Missing required feature: {col}")
 
-            if unseen:
-                raise ValueError(
-                    f"Kolom '{col}' mengandung nilai yang tidak dikenali: {sorted(list(unseen))}. "
-                    f"Harus salah satu dari: {sorted(list(allowed))}."
-                )
-        # transform
-        df[col] = enc.transform(df[col].astype(str))
+    # encode ONLY categorical (do not encode 'target')
+    for col in encoders:
+        if col == "target":
+            continue
+        if col in df.columns:
+            df[col] = encoders[col].transform(df[col].astype(str))
 
-    # Reorder columns to match training order and keep only feature_list
-    df = df[feature_list]
-
-    # Ensure numeric types where appropriate (convert if possible)
-    for c in df.columns:
-        try:
-            df[c] = pd.to_numeric(df[c])
-        except Exception:
-            pass
-
+    df = df[required]  # urutan harus sama seperti training
     return df
 
-# ============================
-# Sidebar Menu
-# ============================
+
+# =========================================
+# REKOMENDASI
+# =========================================
+def get_rekomendasi(label):
+    rekom = {
+        "Insufficient_Weight": [
+            "Tingkatkan asupan kalori harian.",
+            "Konsumsi makanan tinggi protein.",
+            "Periksa status nutrisi secara berkala."
+        ],
+        "Normal_Weight": [
+            "Pertahankan pola makan sehat.",
+            "Tetap rutin berolahraga.",
+            "Cek berat badan tiap 2–4 minggu."
+        ],
+        "Overweight_Level_I": [
+            "Kurangi makanan tinggi gula.",
+            "Tingkatkan aktivitas fisik harian.",
+        ],
+        "Overweight_Level_II": [
+            "Kurangi kalori 300–500 kkal.",
+            "Olahraga teratur.",
+        ],
+        "Obesity_Type_I": [
+            "Kurangi kalori 500–700 kkal/hari.",
+            "Olahraga aerobik 150 menit/minggu.",
+        ],
+        "Obesity_Type_II": [
+            "Mulai program diet terstruktur.",
+            "Konsultasi ahli gizi."
+        ],
+        "Obesity_Type_III": [
+            "Penanganan intensif oleh medis.",
+            "Waspadai risiko hipertensi/diabetes."
+        ]
+    }
+    return rekom.get(label, ["Tidak ada rekomendasi."])
+
+
+# =========================================
+# MENU
+# =========================================
 st.sidebar.title("Menu")
 menu = st.sidebar.radio(
     "Pilih Menu",
     ["Prediksi Upload Dataset", "Prediksi Satuan", "Feature Importance", "Riwayat Prediksi"]
 )
 
-# ============================
-# MENU 1: Prediksi File Dataset
-# ============================
+# ================================================================
+# 1. PREDIKSI UPLOAD DATASET
+# ================================================================
 if menu == "Prediksi Upload Dataset":
-    st.title("Prediksi Obesitas (Upload Dataset)")
-    st.write("Upload file CSV Anda (dipisahkan dengan `;`). Pastikan file hanya berisi fitur berikut: age, gender, height, weight, dan bmi")
-    st.write("Pastikan kolom gender pada data anda berisi 1 dan 2, dimana 1 adalah male dan 2 adalah female!")
 
-    file = st.file_uploader("Upload CSV disini", type=["csv"])
-    if file is not None:
+    st.title("Prediksi Obesitas (Upload CSV)")
+
+    file = st.file_uploader("Upload file CSV (separator ,)", type=["csv"])
+
+    if file:
         try:
-            df = pd.read_csv(file, sep=';')
-        except Exception:
-            st.error("Gagal membaca file. Pastikan format CSV benar dan separator adalah ';'")
+            df = pd.read_csv(file, sep=',')
+        except:
+            st.error("File CSV tidak valid")
             st.stop()
 
-        st.subheader("Preview data (5 baris pertama):")
-        st.dataframe(df.head(), use_container_width=True)
+        # Samakan nama kolom dengan feature_list
+        df_columns_lower = {col.lower(): col for col in df.columns}
+        mapped = {}
 
-        # Drop label if present (we don't want it sent into model)
-        if "label" in df.columns:
-            df = df.drop(columns=["label"])
+        for f in feature_list:
+            if f.lower() in df_columns_lower:
+                mapped[df_columns_lower[f.lower()]] = f
+            else:
+                st.error(f"Dataset tidak memiliki fitur wajib: {f}")
+                st.stop()
 
-        # Preprocess with warnings allowed
+        df = df.rename(columns=mapped)
+
+        st.subheader("Dataset Awal")
+        st.dataframe(df.head())
+
+        # Preprocess data
         try:
-            df_processed = preprocess(df.copy(), show_warnings=True)
+            df_proc = preprocess(df.copy())
         except Exception as e:
             st.error(f"Preprocessing error: {e}")
             st.stop()
 
-        # Predict
-        try:
-            preds = model.predict(df_processed)
-        except Exception as e:
-            st.error(f"Error saat prediksi: {e}")
-            st.stop()
+        # Prediksi
+        preds = model.predict(df_proc)
+        pred_labels = target_encoder.inverse_transform(preds)
+        df["Prediction"] = pred_labels
 
-        # Attach predictions to original (non-preprocessed) dataframe
-        out = df.copy()
-        out["Prediction"] = preds
-        st.success("Prediksi selesai!")
-        st.subheader("Hasil Prediksi (preview):")
-        st.dataframe(out.head(), use_container_width=True)
+        # ===================================================================
+        #   EVALUASI OPSIONAL → HANYA BERJALAN JIKA LABEL ADA DI DATASET
+        # ===================================================================
+        st.subheader("Evaluasi (Jika Label Ada)")
 
-        # Download full results
+        if "NObeyesdad" in df.columns:
+
+            # Coba encode label asli jika tersedia
+            try:
+                if "NObeyesdad" in encoders:
+                    true_encoded = encoders["NObeyesdad"].transform(df["NObeyesdad"].astype(str))
+                else:
+                    # Buat encoder label sementara, aman dan tidak crash
+                    from sklearn.preprocessing import LabelEncoder
+                    lbl_tmp = LabelEncoder()
+                    true_encoded = lbl_tmp.fit_transform(df["NObeyesdad"].astype(str))
+
+                from sklearn.metrics import accuracy_score, classification_report, confusion_matrix
+
+                # Accuracy
+                acc = accuracy_score(true_encoded, preds)
+                st.write(f"**Akurasi:** {acc:.4f}")
+
+                # Classification report
+                st.write("**Classification Report:**")
+                report = classification_report(true_encoded, preds, output_dict=True)
+                st.dataframe(pd.DataFrame(report).transpose())
+
+                # Confusion matrix
+                st.write("**Confusion Matrix:**")
+                cm = confusion_matrix(true_encoded, preds)
+                st.dataframe(pd.DataFrame(cm))
+
+                st.subheader("Distribusi Prediksi")
+                st.bar_chart(df["Prediction"].value_counts())
+
+            except Exception as e:
+                st.error(f"Gagal menghitung evaluasi: {e}")
+
+        else:
+            st.info("Dataset tidak memiliki kolom label NObeyesdad → Evaluasi dilewati.")
+
+        # ===================================================================
+        #   DOWNLOAD HASIL
+        # ===================================================================
+        st.subheader("Preview Hasil")
+        st.dataframe(df.head())
+
         st.download_button(
-            label="Download Hasil Prediksi (CSV)",
-            data=out.to_csv(index=False).encode(),
-            file_name="hasil_prediksi.csv",
-            mime="text/csv",
+            "Download Hasil Prediksi",
+            df.to_csv(index=False).encode(),
+            "hasil_prediksi.csv",
+            "text/csv"
         )
 
-# ============================
-# MENU 2: Prediksi Satuan
-# ============================
-if menu == "Prediksi Satuan":
-    st.title("Prediksi Obesitas (Form Input)")
+# ================================================================
+# 2. INPUT MANUAL
+# ================================================================
+elif menu == "Prediksi Satuan":
 
-    st.write("Masukkan nilai dari setiap fitur berikut:")
-
+    st.title("Prediksi Obesitas (Input Manual)")
     input_data = {}
 
+    # Bentuk input form otomatis dari feature_list
     for col in feature_list:
-        if col == "gender":
-            input_data[col] = st.selectbox("Gender", ["male", "female"])
+        if col in encoders and col != "target":
+            input_data[col] = st.selectbox(col, list(encoders[col].classes_))
         else:
             input_data[col] = st.number_input(col, format="%.2f")
 
     if st.button("Prediksi"):
         df_input = pd.DataFrame([input_data])
+        df_proc = preprocess(df_input.copy())
 
-        # Preprocessing
-        df_processed = preprocess(df_input.copy())
+        pred = model.predict(df_proc)[0]
+        probas = model.predict_proba(df_proc)[0]
 
-        # Predict
-        pred = model.predict(df_processed)[0]
-        probas = model.predict_proba(df_processed)[0]
+        pred_label = target_encoder.inverse_transform([pred])[0]  # FIXED
 
-        st.success(f"Hasil Prediksi: **{pred}**")
+        st.success(f"HASIL: **{pred_label}**")
 
-        # ======================
-        # Probabilitas
-        # ======================
-        st.subheader("Probabilitas Tiap Kelas")
         prob_df = pd.DataFrame({
-            "Kelas": model.classes_,
+            "Kelas": target_encoder.classes_,
             "Probabilitas": probas
         })
-        st.dataframe(prob_df, use_container_width=True)
+        st.dataframe(prob_df)
 
-        # ======================
-        # Rekomendasi Gaya Hidup
-        # ======================
-        st.subheader("Rekomendasi Gaya Hidup")
-
-        rekom = {
-            "Underweight": [
-                "Tingkatkan asupan kalori harian.",
-                "Fokus pada makanan tinggi protein dan karbohidrat kompleks.",
-                "Perbanyak frekuensi makan (5–6 kali/hari)."
-            ],
-            "Normal Weight": [
-                "Pertahankan pola makan seimbang.",
-                "Lakukan aktivitas fisik minimal 30 menit/hari.",
-                "Monitor berat badan setiap 2 minggu."
-            ],
-            "Overweight": [
-                "Kurangi makanan tinggi gula dan lemak.",
-                "Tingkatkan aktivitas fisik seperti jalan cepat atau jogging.",
-                "Perbanyak konsumsi sayur dan buah."
-            ],
-            "Obese": [
-                "Kurangi konsumsi kalori 500–1000 kalori/hari.",
-                "Lakukan olahraga teratur (150 menit per minggu).",
-                "Konsultasikan rencana diet dengan ahli gizi.",
-                "Kurangi minuman manis dan makanan olahan."
-            ],
-            "Extremely Obese": [
-                "Pertimbangkan program penurunan berat badan yang diawasi tenaga medis.",
-                "Pantau tekanan darah dan kadar gula secara rutin.",
-                "Kombinasikan diet, olahraga, dan konsultasi profesional."
-            ]
-        }
-
-        if pred in rekom:
-            for r in rekom[pred]:
-                st.write(f"- {r}")
-        else:
-            st.write("Tidak ada rekomendasi untuk kategori ini.")
-
-        st.write("DEBUG INPUT:", input_data)
-
-
-        # Rekomendasi final untuk dimasukkan ke DB
-        rekom_text = "\n".join(rekom[pred])
+        rekom = get_rekomendasi(pred_label)
+        for r in rekom:
+            st.write("- ", r)
 
         save_prediction(
             conn,
-            age=input_data.get("age", None),
-            gender=input_data.get("gender", None),
-            height=input_data.get("height", None),
-            weight=input_data.get("weight", None),
-            bmi=input_data.get("bmi", None),
+            input_dict=input_data,
             probabilitas=float(max(probas)),
-            prediksi=pred,
-            rekomendasi=rekom_text
+            prediksi=pred_label,
+            rekomendasi="; ".join(rekom)
         )
-        st.success("Hasil prediksi disimpan ke database.")
-# ============================
-# MENU 3: Feature Importance
-# ============================
+
+        st.success("Disimpan ke database!")
+
+# ================================================================
+# 3. FEATURE IMPORTANCE
+# ================================================================
 elif menu == "Feature Importance":
-    st.title("Feature Importance (Random Forest)")
 
-    importance = model.feature_importances_
-    feature_names = feature_list  
+    st.title("Feature Importance")
 
+    fi = model.feature_importances_
     df_imp = pd.DataFrame({
-        "Feature": feature_names,
-        "Importance": importance
+        "Feature": feature_list,
+        "Importance": fi
     }).sort_values("Importance", ascending=False)
 
-    # Grafik
-    st.subheader("Grafik Feature Importance")
     st.bar_chart(df_imp.set_index("Feature"))
+    st.dataframe(df_imp)
 
-    # Tabel detail
-    st.subheader("Detail Nilai Importance")
-    st.dataframe(df_imp, use_container_width=True)
-
+# ================================================================
+# 4. RIWAYAT
+# ================================================================
 elif menu == "Riwayat Prediksi":
-    st.title("Riwayat Prediksi Obesitas")
+
+    st.title("Riwayat Prediksi")
 
     rows = load_history(conn)
 
-    df_history = pd.DataFrame(rows, columns=[
-        "riwayat_id", "user_id", "age", "gender", "height", "weight", 
-        "bmi", "probability", "prediction", "recommendation", "timestamp"
-    ])
+    if len(rows) == 0:
+        st.info("Belum ada riwayat prediksi.")
+        st.stop()
 
-    df_display = df_history.drop(columns=["riwayat_id", "user_id"])
-    df_display.insert(0, "No", range(1, len(df_display) + 1))
+    # Tombol hapus semua
+    if st.button("🗑️ Hapus Semua Riwayat"):
+        delete_all_history(conn)
+        st.success("Semua riwayat berhasil dihapus.")
+        st.rerun()
 
-    df_display = df_display.rename(columns={
-        "age": "Age",
-        "gender": "Gender",
-        "height": "Height",
-        "weight": "Weight",
-        "bmi": "BMI",
-        "probability": "Probability",
-        "prediction": "Prediction",
-        "recommendation": "Recommendation",
-        "timestamp": "Waktu Prediksi"
-    })
-    st.dataframe(df_display, use_container_width=True)
+    # Format ulang data riwayat
+    formatted = []
+    for id, input_json, prob, pred, rekom, ts in rows:
+        inp = json.loads(input_json)
+        formatted.append({
+            "ID": id,
+            **inp,
+            "Probabilitas": prob,
+            "Prediksi": pred,
+            "Rekomendasi": rekom,
+            "Waktu": ts
+        })
 
-    buffer = io.BytesIO()
-    with pd.ExcelWriter(buffer, engine='xlsxwriter') as writer:
-        df_display.to_excel(writer, index=False, sheet_name='Riwayat Prediksi')
+    df_hist = pd.DataFrame(formatted)
+
+    # =========================================
+    # 🔽 Download XLSX (letakkan sebelum tabel)
+    # =========================================
+    import io
+
+    output = io.BytesIO()
+    df_hist.to_excel(output, index=False)
+    output.seek(0)
 
     st.download_button(
-        label="Download Excel",
-        data=buffer.getvalue(),
+        label="⬇️ Download Semua Riwayat (Excel)",
+        data=output,
         file_name="riwayat_prediksi.xlsx",
         mime="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet"
     )
+
+    # =========================================
+    # Tampilkan tabel
+    # =========================================
+    st.subheader("Data Riwayat")
+    st.dataframe(df_hist, use_container_width=True)
+
+    # =========================================
+    # Tombol hapus per baris
+    # =========================================
+    st.subheader("Hapus Berdasarkan ID")
+
+    for i, row in df_hist.iterrows():
+        col1, col2 = st.columns([10, 2])
+
+        with col1:
+            st.write(f"ID: {row['ID']} — Prediksi: {row['Prediksi']} — Waktu: {row['Waktu']}")
+
+        with col2:
+            if st.button("🗑️ Hapus", key=f"hapus_{row['ID']}"):
+                delete_history_by_id(conn, int(row['ID']))
+                st.success(f"Riwayat dengan ID {row['ID']} berhasil dihapus.")
+                st.rerun()
 
 
 
