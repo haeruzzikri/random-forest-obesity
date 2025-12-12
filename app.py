@@ -1,5 +1,7 @@
 import streamlit as st
 import pandas as pd
+import matplotlib.pyplot as plt
+import seaborn as sns
 import io
 import json
 import joblib
@@ -90,7 +92,8 @@ def get_rekomendasi(label):
 st.sidebar.title("Menu")
 menu = st.sidebar.radio(
     "Pilih Menu",
-    ["Prediksi Upload Dataset", "Prediksi Satuan", "Feature Importance", "Riwayat Prediksi"]
+    ["Prediksi Upload Dataset", "Prediksi Satuan", "Feature Importance", "Evaluasi Model", "Riwayat Prediksi"]
+
 )
 
 # ================================================================
@@ -132,57 +135,15 @@ if menu == "Prediksi Upload Dataset":
             st.error(f"Preprocessing error: {e}")
             st.stop()
 
-        # Prediksi
+        # Prediksi tanpa evaluasi
         preds = model.predict(df_proc)
         pred_labels = target_encoder.inverse_transform(preds)
         df["Prediction"] = pred_labels
 
-        # ===================================================================
-        #   EVALUASI OPSIONAL → HANYA BERJALAN JIKA LABEL ADA DI DATASET
-        # ===================================================================
-        st.subheader("Evaluasi (Jika Label Ada)")
-
-        if "NObeyesdad" in df.columns:
-
-            # Coba encode label asli jika tersedia
-            try:
-                if "NObeyesdad" in encoders:
-                    true_encoded = encoders["NObeyesdad"].transform(df["NObeyesdad"].astype(str))
-                else:
-                    # Buat encoder label sementara, aman dan tidak crash
-                    from sklearn.preprocessing import LabelEncoder
-                    lbl_tmp = LabelEncoder()
-                    true_encoded = lbl_tmp.fit_transform(df["NObeyesdad"].astype(str))
-
-                from sklearn.metrics import accuracy_score, classification_report, confusion_matrix
-
-                # Accuracy
-                acc = accuracy_score(true_encoded, preds)
-                st.write(f"**Akurasi:** {acc:.4f}")
-
-                # Classification report
-                st.write("**Classification Report:**")
-                report = classification_report(true_encoded, preds, output_dict=True)
-                st.dataframe(pd.DataFrame(report).transpose())
-
-                # Confusion matrix
-                st.write("**Confusion Matrix:**")
-                cm = confusion_matrix(true_encoded, preds)
-                st.dataframe(pd.DataFrame(cm))
-
-                st.subheader("Distribusi Prediksi")
-                st.bar_chart(df["Prediction"].value_counts())
-
-            except Exception as e:
-                st.error(f"Gagal menghitung evaluasi: {e}")
-
-        else:
-            st.info("Dataset tidak memiliki kolom label NObeyesdad → Evaluasi dilewati.")
-
-        # ===================================================================
-        #   DOWNLOAD HASIL
-        # ===================================================================
-        st.subheader("Preview Hasil")
+        # ============================================================
+        #   PREVIEW & DOWNLOAD HASIL
+        # ============================================================
+        st.subheader("Preview Hasil Prediksi")
         st.dataframe(df.head())
 
         st.download_button(
@@ -326,6 +287,81 @@ elif menu == "Riwayat Prediksi":
                 delete_history_by_id(conn, int(row['ID']))
                 st.success(f"Riwayat dengan ID {row['ID']} berhasil dihapus.")
                 st.rerun()
+# ================================================================
+# 5. EVALUASI MODEL (BARU)
+# ================================================================
+elif menu == "Evaluasi Model":
+
+    st.title("Evaluasi Model")
+
+    try:
+        evaluation = joblib.load("evaluation.pkl")
+    except:
+        st.error("File evaluation.pkl tidak ditemukan. Pastikan sudah dibuat saat training.")
+        st.stop()
+
+    # ================================
+    # Tampilkan Metric Utama
+    # ================================
+    st.subheader("Ringkasan Metrik")
+
+    metrik_cols = st.columns(4)
+    with metrik_cols[0]:
+        st.metric("Accuracy", f"{evaluation.get('accuracy', 0):.4f}")
+    with metrik_cols[1]:
+        st.metric("Precision", f"{evaluation.get('precision', 0):.4f}")
+    with metrik_cols[2]:
+        st.metric("Recall", f"{evaluation.get('recall', 0):.4f}")
+    with metrik_cols[3]:
+        st.metric("F1-Score", f"{evaluation.get('f1', 0):.4f}")
+
+    if "auc" in evaluation:
+        st.metric("AUC", f"{evaluation['auc']:.4f}")
+
+    # ================================
+    # Classification Report
+    # ================================
+    st.subheader("Classification Report")
+    if "classification_report" in evaluation:
+        cr_df = pd.DataFrame(evaluation["classification_report"]).transpose()
+        st.dataframe(cr_df)
+    else:
+        st.info("Tidak ada classification_report di evaluation.pkl")
+
+    # ================================
+    # Confusion Matrix (Heatmap)
+    # ================================
+    st.subheader("Confusion Matrix")
+
+    if "confusion_matrix" in evaluation:
+
+        cm = evaluation["confusion_matrix"]
+
+        # Ambil class names jika ada
+        classes = evaluation.get("class_names", [])
+
+        fig, ax = plt.subplots(figsize=(7, 5))
+        sns.heatmap(
+            cm,
+            annot=True,
+            fmt="d",
+            cmap="Blues",
+            cbar=False,
+            xticklabels=classes if len(classes) > 0 else "auto",
+            yticklabels=classes if len(classes) > 0 else "auto",
+            linewidths=.5,
+            linecolor='black'
+        )
+
+        ax.set_xlabel("Predicted Label")
+        ax.set_ylabel("True Label")
+        ax.set_title("Confusion Matrix", fontsize=14, pad=10)
+
+        st.pyplot(fig)
+
+    else:
+        st.info("Tidak ada confusion_matrix di evaluation.pkl")
+
 
 
 
