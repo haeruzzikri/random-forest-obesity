@@ -19,7 +19,7 @@ target_encoder = encoders["NObeyesdad"]   # FIXED
 # =========================================
 # STREAMLIT CONFIG
 # =========================================
-st.set_page_config(page_title="Obesity Risk Classifier", layout="wide")
+st.set_page_config(page_title="Klasifikasi Resiko Obesitas Random Forest", layout="wide")
 
 conn = create_connection()
 create_table(conn)
@@ -92,14 +92,14 @@ def get_rekomendasi(label):
 st.sidebar.title("Menu")
 menu = st.sidebar.radio(
     "Pilih Menu",
-    ["Prediksi Upload Dataset", "Prediksi Satuan", "Feature Importance", "Evaluasi Model", "Riwayat Prediksi"]
+    ["Prediksi Data Massal", "Prediksi Data Satuan", "Feature Importance", "Evaluasi Model", "Riwayat Prediksi"]
 
 )
 
 # ================================================================
 # 1. PREDIKSI UPLOAD DATASET
 # ================================================================
-if menu == "Prediksi Upload Dataset":
+if menu == "Prediksi Data Massal":
 
     st.title("Prediksi Obesitas (Upload CSV)")
 
@@ -156,38 +156,142 @@ if menu == "Prediksi Upload Dataset":
 # ================================================================
 # 2. INPUT MANUAL
 # ================================================================
-elif menu == "Prediksi Satuan":
+elif menu == "Prediksi Data Satuan":
 
     st.title("Prediksi Obesitas (Input Manual)")
+    st.info("Isi seluruh data sesuai kondisi Anda. Semua field wajib diisi.")
+
     input_data = {}
 
-    # Bentuk input form otomatis dari feature_list
-    for col in feature_list:
-        if col in encoders and col != "target":
-            input_data[col] = st.selectbox(col, list(encoders[col].classes_))
-        else:
-            input_data[col] = st.number_input(col, format="%.2f")
+    with st.form("form_prediksi_manual"):
 
-    if st.button("Prediksi"):
+        # ===== URUTAN INPUT SESUAI PERMINTAAN =====
+        input_data["Age"] = st.number_input(
+            "Age (Usia)",
+            min_value=1,
+            max_value=100
+        )
+
+        input_data["Gender"] = st.selectbox(
+            "Gender",
+            encoders["Gender"].classes_
+        )
+
+        input_data["Height"] = st.number_input(
+            "Height (meter)",
+            min_value=1.0,
+            max_value=2.5,
+            help="Contoh: 1.62"
+        )
+
+        input_data["Weight"] = st.number_input(
+            "Weight (kg)",
+            min_value=10.0,
+            max_value=300.0,
+            help="Contoh: 64"
+        )
+
+        input_data["CALC"] = st.selectbox(
+            "CALC (Konsumsi alkohol)",
+            encoders["CALC"].classes_,
+            help="Frekuensi konsumsi alkohol"
+        )
+
+        input_data["FAVC"] = st.selectbox(
+            "FAVC (Sering konsumsi makanan tinggi kalori)",
+            encoders["FAVC"].classes_
+        )
+
+        input_data["FCVC"] = st.slider(
+            "FCVC (Konsumsi sayur)",
+            1, 3,
+            help="1 = jarang, 3 = sering"
+        )
+
+        input_data["NCP"] = st.slider(
+            "NCP (Jumlah makan utama per hari)",
+            1, 4
+        )
+
+        input_data["SCC"] = st.selectbox(
+            "SCC (Monitoring kalori)",
+            encoders["SCC"].classes_
+        )
+
+        input_data["SMOKE"] = st.selectbox(
+            "SMOKE (Merokok)",
+            encoders["SMOKE"].classes_
+        )
+
+        input_data["CH2O"] = st.slider(
+            "CH2O (Konsumsi air)",
+            1, 3,
+            help="1 = sedikit, 3 = banyak"
+        )
+
+        input_data["family_history_with_overweight"] = st.selectbox(
+            "Riwayat keluarga overweight",
+            encoders["family_history_with_overweight"].classes_
+        )
+
+        input_data["FAF"] = st.slider(
+            "FAF (Aktivitas fisik)",
+            0, 3,
+            help="0 = tidak pernah, 3 = sering"
+        )
+
+        input_data["TUE"] = st.slider(
+            "TUE (Waktu penggunaan teknologi)",
+            min_value=0,
+            max_value=2,
+            help="TUE = Time Using Technology, yaitu waktu penggunaan layar (HP, laptop, TV) per hari.\n\n0 = < 1 jam\n1 = 1–3 jam\n2 = > 3 jam"
+        )
+
+        input_data["CAEC"] = st.selectbox(
+            "CAEC (Makan di luar waktu makan)",
+            encoders["CAEC"].classes_
+        )
+
+        input_data["MTRANS"] = st.selectbox(
+            "MTRANS (Transportasi)",
+            encoders["MTRANS"].classes_
+        )
+
+        submit = st.form_submit_button("Prediksi")
+
+    # ================= VALIDASI & PREDIKSI =================
+    if submit:
+
+        # Validasi wajib
+        if input_data["Height"] <= 0 or input_data["Weight"] <= 0:
+            st.error("❌ Height dan Weight wajib diisi dengan benar")
+            st.stop()
+
+        # Hitung BMI otomatis
+        input_data["BMI"] = input_data["Weight"] / (input_data["Height"] ** 2)
+
         df_input = pd.DataFrame([input_data])
         df_proc = preprocess(df_input.copy())
 
         pred = model.predict(df_proc)[0]
         probas = model.predict_proba(df_proc)[0]
 
-        pred_label = target_encoder.inverse_transform([pred])[0]  # FIXED
+        pred_label = target_encoder.inverse_transform([pred])[0]
 
-        st.success(f"HASIL: **{pred_label}**")
+        st.success(f"**HASIL PREDIKSI: {pred_label}**")
 
         prob_df = pd.DataFrame({
             "Kelas": target_encoder.classes_,
             "Probabilitas": probas
-        })
+        }).sort_values("Probabilitas", ascending=False)
+
+        st.subheader("Probabilitas Prediksi")
         st.dataframe(prob_df)
 
         rekom = get_rekomendasi(pred_label)
+        st.subheader("Rekomendasi")
         for r in rekom:
-            st.write("- ", r)
+            st.write("•", r)
 
         save_prediction(
             conn,
@@ -197,7 +301,8 @@ elif menu == "Prediksi Satuan":
             rekomendasi="; ".join(rekom)
         )
 
-        st.success("Disimpan ke database!")
+        st.success("Hasil prediksi berhasil disimpan ke database!")
+
 
 # ================================================================
 # 3. FEATURE IMPORTANCE
@@ -237,7 +342,11 @@ elif menu == "Riwayat Prediksi":
     # Format ulang data riwayat
     formatted = []
     for id, input_json, prob, pred, rekom, ts in rows:
-        inp = json.loads(input_json)
+        try:
+            inp = json.loads(input_json) 
+        except Exception:
+            inp = {}                       
+
         formatted.append({
             "ID": id,
             **inp,
@@ -252,8 +361,6 @@ elif menu == "Riwayat Prediksi":
     # =========================================
     # 🔽 Download XLSX (letakkan sebelum tabel)
     # =========================================
-    import io
-
     output = io.BytesIO()
     df_hist.to_excel(output, index=False)
     output.seek(0)
@@ -272,21 +379,20 @@ elif menu == "Riwayat Prediksi":
     st.dataframe(df_hist, use_container_width=True)
 
     # =========================================
-    # Tombol hapus per baris
+    # Hapus berdasarkan ID (AMAN)
     # =========================================
-    st.subheader("Hapus Berdasarkan ID")
+    st.subheader("Hapus Riwayat")
 
-    for i, row in df_hist.iterrows():
-        col1, col2 = st.columns([10, 2])
+    selected_id = st.selectbox(
+        "Pilih ID yang akan dihapus",
+        df_hist["ID"].tolist()
+    )
 
-        with col1:
-            st.write(f"ID: {row['ID']} — Prediksi: {row['Prediksi']} — Waktu: {row['Waktu']}")
+    if st.button("🗑️ Hapus Riwayat Terpilih"):
+        delete_history_by_id(conn, int(selected_id))
+        st.success(f"Riwayat dengan ID {selected_id} berhasil dihapus.")
+        st.rerun()
 
-        with col2:
-            if st.button("🗑️ Hapus", key=f"hapus_{row['ID']}"):
-                delete_history_by_id(conn, int(row['ID']))
-                st.success(f"Riwayat dengan ID {row['ID']} berhasil dihapus.")
-                st.rerun()
 # ================================================================
 # 5. EVALUASI MODEL (BARU)
 # ================================================================
@@ -361,6 +467,28 @@ elif menu == "Evaluasi Model":
 
     else:
         st.info("Tidak ada confusion_matrix di evaluation.pkl")
+
+    # ================================
+    # ROC Curve
+    # ================================
+    st.subheader("ROC Curve (One-vs-Rest)")
+
+    fig, ax = plt.subplots(figsize=(7, 5))
+
+    for i, class_name in enumerate(evaluation["class_names"]):
+        ax.plot(
+            evaluation["roc_curve"]["fpr"][i],
+            evaluation["roc_curve"]["tpr"][i],
+            label=class_name
+        )
+
+    ax.plot([0, 1], [0, 1], linestyle="--")
+    ax.set_xlabel("False Positive Rate")
+    ax.set_ylabel("True Positive Rate")
+    ax.legend(fontsize=8)
+
+    st.pyplot(fig)
+
 
 
 

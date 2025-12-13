@@ -5,7 +5,9 @@ from sklearn.ensemble import RandomForestClassifier
 from sklearn.metrics import (
     accuracy_score,
     classification_report,
-    confusion_matrix
+    confusion_matrix,
+    roc_auc_score,
+    roc_curve
 )
 from imblearn.over_sampling import SMOTE
 import joblib
@@ -31,7 +33,7 @@ for col in df.select_dtypes(include=['object']).columns:
 # ============================
 # 3. Add BMI Column (NEW)
 # ============================
-df["BMI"] = df["Weight"] / (df["Height"] ** 2)
+# df["BMI"] = df["Weight"] / (df["Height"] ** 2)
 
 # ============================
 # 2. Identify categorical and numerical columns
@@ -45,7 +47,7 @@ label_col = 'NObeyesdad'
 
 numeric_cols = [
     'Age', 'Height', 'Weight', 'FCVC', 'NCP',
-    'CH2O', 'FAF', 'TUE', 'BMI'  # BMI ditambahkan
+    'CH2O', 'FAF', 'TUE'  # BMI ditambahkan
 ]
 
 # ============================
@@ -91,10 +93,24 @@ model.fit(X_train_sm, y_train_sm)
 # 8. Evaluation (updated)
 # ============================
 y_pred = model.predict(X_test)
+y_proba = model.predict_proba(X_test)
 
 acc = accuracy_score(y_test, y_pred)
 report_dict = classification_report(y_test, y_pred, output_dict=True)
 cm = confusion_matrix(y_test, y_pred)
+
+# ROC Curve (One-vs-Rest)
+fpr = {}
+tpr = {}
+
+for i in range(len(encoders[label_col].classes_)):
+    fpr[i], tpr[i], _ = roc_curve(
+        y_test == i,
+        y_proba[:, i]
+    )
+
+# AUC macro
+auc = roc_auc_score(y_test, y_proba, multi_class="ovr", average="macro")
 
 # Ambil metrik macro avg
 macro_p = report_dict["macro avg"]["precision"]
@@ -177,10 +193,15 @@ evaluation = {
     "precision": precision,
     "recall": recall,
     "f1": f1,
+    "auc": auc,
     "classification_report": report_dict,
     "confusion_matrix": cm,
     "feature_importance": fi_df,
-    "class_names": encoders[label_col].classes_
+    "class_names": encoders[label_col].classes_,
+    "roc_curve": {
+        "fpr": fpr,
+        "tpr": tpr
+    }
 }
 joblib.dump(evaluation, "evaluation.pkl")
 

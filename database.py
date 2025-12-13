@@ -47,16 +47,15 @@ def create_table(conn):
 
 
 def save_prediction(conn, input_dict, probabilitas, prediksi, rekomendasi):
-    """Menyimpan hasil prediksi ke database."""
     cursor = conn.cursor()
     cursor.execute("""
         INSERT INTO riwayat_prediksi (input_json, probabilitas, prediksi, rekomendasi)
         VALUES (?, ?, ?, ?)
     """, (
-        json.dumps(input_dict),
-        probabilitas,
-        prediksi,
-        rekomendasi
+        json.dumps(input_dict, default=str),
+        float(probabilitas),
+        str(prediksi),
+        str(rekomendasi)
     ))
     conn.commit()
 
